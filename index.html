@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HighWay - Driving Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Dashboard UI -->
+        <div id="dashboard">
+            <div id="indicators">
+                <div id="left-indicator" class="indicator">◄</div>
+                <div id="right-indicator" class="indicator">►</div>
+            </div>
+            <div id="speed-display">
+                <span id="speed">0</span>
+                <span class="unit">km/h</span>
+            </div>
+            <div id="score-display">
+                Score: <span id="score">0</span>
+            </div>
+        </div>
+
+        <!-- Rear-view mirrors -->
+        <div id="left-mirror" class="mirror"></div>
+        <div id="center-mirror" class="mirror"></div>
+        <div id="right-mirror" class="mirror"></div>
+
+        <!-- Game Over screen -->
+        <div id="game-over" class="hidden">
+            <h1>Game Over</h1>
+            <p id="final-score">Final Score: 0</p>
+            <p id="game-over-reason"></p>
+            <button id="restart-btn">Restart</button>
+        </div>
+
+        <!-- Instructions (fades out quickly) -->
+        <div id="instructions">
+            <h3>Controls</h3>
+            <p>Q/E  -  Signal Left/Right</p>
+            <p>W/S  -  Speed Up/Down</p>
+            <p>A/D  -  Change Lane</p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
