@@ -1212,7 +1212,7 @@ function restart() {
     }
     
     // Reset score
-    game.score = 1000;
+    game.score = 0;
     game.scoreTimer = 0;
     game.lastFeedbackReason = null;
     game.feedbackDebounce = 0;
