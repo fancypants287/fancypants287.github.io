@@ -74,6 +74,43 @@ body {
 
 #score-display {
     font-size: 20px;
+    position: relative;
+}
+
+#score-feedback {
+    position: absolute;
+    top: -35px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    font-weight: bold;
+    white-space: nowrap;
+    padding: 5px 12px;
+    border-radius: 5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+#score-feedback.show {
+    opacity: 1;
+}
+
+#score-feedback.positive {
+    color: #00ff00;
+    background: rgba(0, 255, 0, 0.2);
+    border: 1px solid #00ff00;
+}
+
+#score-feedback.negative {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.2);
+    border: 1px solid #ff4444;
+}
+
+@keyframes fadeOut {
+    0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
 }
 
 /* Mirrors */

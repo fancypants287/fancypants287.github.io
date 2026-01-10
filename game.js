@@ -1,4 +1,4 @@
-// HighWay - Driving Simulator Game
+// High Way - Driving Simulator Game
 // Main game logic
 
 // Game constants
@@ -7,8 +7,8 @@ const NUM_LANES = 2;
 const HIGHWAY_WIDTH = LANE_WIDTH * NUM_LANES;
 const MIN_SPEED = 100;
 const MAX_SPEED = 140;
-const SPEED_INCREMENT = 0.05;
-const CRASH_DISTANCE = 3;
+const SPEED_INCREMENT = 0.1;
+const CRASH_DISTANCE = 5;
 const TAILGATE_DISTANCE = 15;
 const LEFT_LANE_SLOW_THRESHOLD = 100;
 
@@ -30,7 +30,7 @@ let game = {
         signalUsedForLaneChange: false
     },
     traffic: [],
-    score: 1000,
+    score: 0,       // 1_000
     scoreTimer: 0,
     gameOver: false,
     keys: {},
@@ -39,7 +39,16 @@ let game = {
     roadEdges: [],
     groundSegments: [],
     mirrorCameras: [],
-    mirrorScenes: []
+    mirrorScenes: [],
+    pointsAnimation: {
+        increasing: false,
+        decreasing: false,
+        increaseInterval: null,
+        decreaseInterval: null
+    },
+    lastFeedbackReason: null, // Track the current feedback reason
+    feedbackDebounce: 0, // Prevent feedback spam
+    leftLaneBlockingTime: 0 // Track how long player has been blocking left lane
 };
 
 // Initialize the game
@@ -50,8 +59,8 @@ function init() {
     game.scene.fog = new THREE.Fog(0x87CEEB, 50, 300);
 
     // Set up camera (first-person view from inside car)
-    game.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    game.camera.position.set(LANE_POSITIONS[1], 2.5, 0);
+    game.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+    game.camera.position.set(LANE_POSITIONS[1], 2.5, -2);
     game.camera.rotation.x = -0.1;
 
     // Set up renderer
@@ -98,7 +107,7 @@ function createHighway() {
     // Road surface
     const roadLength = 500;
     const roadGeometry = new THREE.PlaneGeometry(HIGHWAY_WIDTH, roadLength);
-    const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x333333, side: THREE.DoubleSide });
     
     for (let i = -2; i <= 2; i++) {
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
@@ -110,7 +119,7 @@ function createHighway() {
 
     // Lane markings
     const markingGeometry = new THREE.PlaneGeometry(0.3, 5);
-    const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+    const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, side: THREE.DoubleSide });
     
     for (let lane = 0; lane < NUM_LANES - 1; lane++) {
         const laneX = -LANE_WIDTH + (lane + 1) * LANE_WIDTH;
@@ -126,7 +135,7 @@ function createHighway() {
 
     // Road edges
     const edgeGeometry = new THREE.PlaneGeometry(0.5, 5);
-    const edgeMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+    const edgeMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00, side: THREE.DoubleSide });
     
     for (let side of [-1, 1]) {
         const edgeX = side * (HIGHWAY_WIDTH / 2 + 0.25);
@@ -139,9 +148,45 @@ function createHighway() {
         }
     }
 
-    // Ground beside road
+    // Ground beside road with grass texture
     const groundGeometry = new THREE.PlaneGeometry(200, 1000);
-    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+    
+    // Create grass texture using canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    // Base grass color
+    ctx.fillStyle = '#2a8b2a';
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Add random grass blades/variation
+    for (let i = 0; i < 8000; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const shade = Math.random();
+        
+        if (shade < 0.3) {
+            ctx.fillStyle = '#1a6b1a'; // Darker green
+        } else if (shade < 0.6) {
+            ctx.fillStyle = '#2a8b2a'; // Medium green
+        } else {
+            ctx.fillStyle = '#3aa03a'; // Lighter green
+        }
+        
+        ctx.fillRect(x, y, 2, 2);
+    }
+    
+    const grassTexture = new THREE.CanvasTexture(canvas);
+    grassTexture.wrapS = THREE.RepeatWrapping;
+    grassTexture.wrapT = THREE.RepeatWrapping;
+    grassTexture.repeat.set(20, 100);
+    
+    const groundMaterial = new THREE.MeshLambertMaterial({ 
+        map: grassTexture, 
+        side: THREE.DoubleSide 
+    });
     
     for (let side of [-1, 1]) {
         for (let i = -2; i <= 2; i++) {
@@ -160,7 +205,7 @@ function createDashboard() {
     const dashGeometry = new THREE.BoxGeometry(6, 0.8, 2);
     const dashMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
     const dashboard = new THREE.Mesh(dashGeometry, dashMaterial);
-    dashboard.position.set(0, -1.2, -1.5);
+    dashboard.position.set(0, -1.2, -1.2);
     game.camera.add(dashboard);
     
     // Steering wheel
@@ -169,7 +214,7 @@ function createDashboard() {
     const steeringWheelGeometry = new THREE.TorusGeometry(wheelRadius, wheelTube, 16, 32);
     const steeringWheelMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
     const steeringWheel = new THREE.Mesh(steeringWheelGeometry, steeringWheelMaterial);
-    steeringWheel.position.set(0, -0.8, -1.2);
+    steeringWheel.position.set(0, -0.8, -1.0);
     steeringWheel.rotation.x = Math.PI / 6; // Tilt slightly
     game.camera.add(steeringWheel);
     
@@ -185,7 +230,7 @@ function createDashboard() {
     const gaugeGeometry = new THREE.CircleGeometry(0.15, 32);
     const gaugeMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
     const gauge = new THREE.Mesh(gaugeGeometry, gaugeMaterial);
-    gauge.position.set(0.6, -0.5, -1);
+    gauge.position.set(0.6, -0.5, -1.1);
     gauge.rotation.y = -Math.PI / 8;
     game.camera.add(gauge);
     
@@ -201,27 +246,21 @@ function createDashboard() {
     const pillarGeometry = new THREE.BoxGeometry(0.15, 2.5, 0.15);
     const pillarMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
     const leftPillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-    leftPillar.position.set(-1.8, 0.3, -1.5);
+    leftPillar.position.set(-1.8, 0.3, -1.2);
     leftPillar.rotation.z = 0.3; // Angle outward
     game.camera.add(leftPillar);
     
     // Windshield frame - right A-pillar (angled)
     const rightPillar = new THREE.Mesh(pillarGeometry, pillarMaterial);
-    rightPillar.position.set(1.8, 0.3, -1.5);
+    rightPillar.position.set(1.8, 0.3, -1.2);
     rightPillar.rotation.z = -0.3; // Angle outward
     game.camera.add(rightPillar);
-    
-    // Top windshield frame
-    const topFrameGeometry = new THREE.BoxGeometry(3.8, 0.12, 0.08);
-    const topFrame = new THREE.Mesh(topFrameGeometry, pillarMaterial);
-    topFrame.position.set(0, 1.5, -1.5);
-    game.camera.add(topFrame);
     
     // Roof (interior ceiling)
     const roofGeometry = new THREE.BoxGeometry(5, 0.3, 3);
     const roofMaterial = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
     const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-    roof.position.set(0, 1.3, -1);
+    roof.position.set(0, 1.3, -0.3);
     game.camera.add(roof);
     
     game.scene.add(game.camera);
@@ -277,8 +316,27 @@ function createTrafficCar(lane, position, speed, driverType = 'medium') {
         position: position,
         speed: speed,
         targetLane: lane,
-        driverType: driverType
+        driverType: driverType,
+        blockedByPlayerTime: 0, // Track how long this car has been blocked by player
+        crashed: false,
+        crashTime: 0,
+        crashDirection: 0,
+        originalY: 0
     };
+}
+
+// Check if a spawn position is safe (not too close to other cars)
+function isSpawnPositionSafe(lane, position, minDistance = 30) {
+    for (let car of game.traffic) {
+        if (car.crashed) continue;
+        if (car.lane === lane) {
+            const distance = Math.abs(car.position - position);
+            if (distance < minDistance) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 // Spawn traffic
@@ -286,31 +344,46 @@ function spawnTraffic() {
     const numCars = 8;
     
     for (let i = 0; i < numCars; i++) {
-        // Spawn cars both ahead and behind player
-        const position = -200 + Math.random() * 400; // Range: -200 to +200
+        let position, lane, driverType, speed;
+        let attempts = 0;
+        let validPosition = false;
         
-        // Randomly select driver type
-        const rand = Math.random();
-        let driverType, lane, speed;
-        
-        if (rand < 0.33) {
-            // Slow driver - right lane, 100-115 km/h
-            driverType = 'slow';
-            lane = 1; // Right lane
-            speed = 100 + Math.random() * 15;
-        } else if (rand < 0.66) {
-            // Fast driver - left lane, 120-150 km/h
-            driverType = 'fast';
-            lane = 0; // Left lane
-            speed = 120 + Math.random() * 30;
-        } else {
-            // Medium driver - any lane, 110-125 km/h
-            driverType = 'medium';
-            lane = Math.floor(Math.random() * NUM_LANES);
-            speed = 110 + Math.random() * 15;
+        // Try up to 10 times to find a safe position
+        while (!validPosition && attempts < 10) {
+            // Spawn cars both ahead and behind player
+            position = -200 + Math.random() * 400; // Range: -200 to +200
+            
+            // Randomly select driver type
+            const rand = Math.random();
+            
+            if (rand < 0.33) {
+                // Slow driver - right lane, 100-115 km/h
+                driverType = 'slow';
+                lane = 1; // Right lane
+                speed = 100 + Math.random() * 15;
+            } else if (rand < 0.66) {
+                // Fast driver - left lane, 120-150 km/h
+                driverType = 'fast';
+                lane = 0; // Left lane
+                speed = 120 + Math.random() * 30;
+            } else {
+                // Medium driver - any lane, 110-125 km/h
+                driverType = 'medium';
+                lane = Math.floor(Math.random() * NUM_LANES);
+                speed = 110 + Math.random() * 15;
+            }
+            
+            // Check if position is safe
+            if (isSpawnPositionSafe(lane, position)) {
+                validPosition = true;
+            }
+            attempts++;
         }
         
-        game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+        // Only spawn if we found a valid position
+        if (validPosition) {
+            game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+        }
     }
 }
 
@@ -325,14 +398,18 @@ function setupMirrors() {
         const height = rect.height;
         
         // Create separate renderer for this mirror
-        const mirrorRenderer = new THREE.WebGLRenderer({ antialias: true });
+        const mirrorRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         mirrorRenderer.setSize(width, height);
         mirrorRenderer.domElement.style.width = '100%';
         mirrorRenderer.domElement.style.height = '100%';
+        mirrorRenderer.setClearColor(0x87CEEB); // Same as scene background
         mirrorElement.appendChild(mirrorRenderer.domElement);
         
         // Create camera for this mirror
-        const mirrorCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
+        const mirrorCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 500);
+        
+        // Apply mirror effect using CSS transform instead of camera scale
+        mirrorRenderer.domElement.style.transform = 'scaleX(-1)';
         
         game.mirrorCameras.push({ camera: mirrorCamera, renderer: mirrorRenderer, element: mirrorElement });
     });
@@ -359,16 +436,17 @@ function updateMirrors() {
         if (index === 0) xOffset = -2; // Left mirror
         if (index === 2) xOffset = 2;  // Right mirror
         
+        // Position camera at player location (slightly elevated)
         mirror.camera.position.set(
             game.camera.position.x + xOffset,
-            3,
+            2.5,
             game.player.position
         );
-        mirror.camera.lookAt(
-            game.camera.position.x + xOffset,
-            2,
-            game.player.position + 30
-        );
+        
+        // Rotate camera to look behind (180 degrees + main camera rotation)
+        mirror.camera.rotation.x = -0.05; // Slight downward angle
+        mirror.camera.rotation.y = Math.PI; // 180 degrees to look behind
+        mirror.camera.rotation.z = 0;
         
         mirror.renderer.render(game.scene, mirror.camera);
     });
@@ -417,6 +495,7 @@ function changeLane(direction) {
     if (!correctSignal) {
         game.score -= 10;
         updateScore();
+        showScoreFeedback('No Signal -10', false);
     } else {
         game.player.signalUsedForLaneChange = true;
     }
@@ -543,6 +622,65 @@ function update(delta) {
 // Update traffic cars
 function updateTraffic(delta) {
     game.traffic.forEach(car => {
+        // Skip normal behavior if car is crashed
+        if (car.crashed) {
+            updateCrashedCar(car, delta);
+            return;
+        }
+        
+        // Check distance to player
+        const distanceToPlayer = car.position - game.player.position;
+        const sameLaneAsPlayer = car.lane === game.player.lane;
+        const behindPlayer = distanceToPlayer > 0;
+        const closeToPlayer = Math.abs(distanceToPlayer) < 30;
+        
+        // Collision avoidance: slow down if approaching player from behind
+        let targetSpeed = car.speed;
+        if (sameLaneAsPlayer && behindPlayer && closeToPlayer) {
+            // Car is behind player in same lane
+            if (distanceToPlayer < 15) {
+                // Very close - match player speed or slower
+                targetSpeed = Math.min(car.speed, game.player.speed - 5);
+            } else if (distanceToPlayer < 25) {
+                // Getting close - slow down gradually
+                targetSpeed = Math.min(car.speed, game.player.speed);
+            }
+            
+            // Track blocking time for aggressive behavior
+            if (car.lane === 0 && car.speed > game.player.speed + 10) {
+                // Fast car blocked by slower player in left lane
+                car.blockedByPlayerTime += delta;
+                
+                // After 8 seconds of blocking, become aggressive and rear-end
+                if (car.blockedByPlayerTime > 8) {
+                    targetSpeed = car.speed; // Resume normal speed to ram player
+                }
+            } else {
+                car.blockedByPlayerTime = 0;
+            }
+            
+            // Try to change lanes to pass if blocked
+            if (car.lane === car.targetLane && distanceToPlayer < 20 && car.speed > game.player.speed) {
+                // Try to move to other lane
+                const otherLane = car.lane === 0 ? 1 : 0;
+                // Check if other lane is clear
+                const otherLaneClear = !game.traffic.some(otherCar => {
+                    return otherCar !== car && otherCar.lane === otherLane && 
+                           Math.abs(otherCar.position - car.position) < 20;
+                });
+                if (otherLaneClear) {
+                    car.targetLane = otherLane;
+                }
+            }
+        } else {
+            car.blockedByPlayerTime = 0;
+        }
+        
+        // Smoothly adjust speed
+        if (Math.abs(car.speed - targetSpeed) > 0.1) {
+            car.speed += (targetSpeed - car.speed) * delta * 2;
+        }
+        
         // Move car
         car.position -= (car.speed / 3.6) * delta;
         car.mesh.position.z = car.position;
@@ -585,19 +723,224 @@ function updateTraffic(delta) {
         }
     });
     
-    // Remove cars that are too far behind
-    game.traffic = game.traffic.filter(car => {
+    // Check for AI car collisions (not including player)
+    checkAICarCollisions();
+    
+    // Reposition cars that are too far away instead of removing them
+    game.traffic.forEach(car => {
+        // Car is too far behind - reposition ahead (and make it slower)
         if (car.position > game.player.position + 300) {
-            game.scene.remove(car.mesh);
-            return false;
+            car.position = game.player.position - 150 - Math.random() * 100;
+            car.mesh.position.z = car.position;
+            
+            // Make it slower than player so player can catch up
+            const maxSpeed = game.player.speed - 5;
+            const minSpeed = Math.max(95, maxSpeed - 20);
+            car.speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+            
+            // Update driver type based on new speed
+            if (car.speed < 110) {
+                car.driverType = 'slow';
+            } else if (car.speed < 120) {
+                car.driverType = 'medium';
+            } else {
+                car.driverType = 'fast';
+            }
         }
-        return true;
+        // Car is too far ahead - reposition behind (and make it faster)
+        else if (car.position < game.player.position - 350) {
+            car.position = game.player.position + 100 + Math.random() * 100;
+            car.mesh.position.z = car.position;
+            
+            // Make it faster than player so it can catch up
+            const minSpeed = game.player.speed + 5;
+            const maxSpeed = Math.min(150, minSpeed + 20);
+            car.speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+            
+            // Update driver type based on new speed
+            if (car.speed < 110) {
+                car.driverType = 'slow';
+            } else if (car.speed < 120) {
+                car.driverType = 'medium';
+            } else {
+                car.driverType = 'fast';
+            }
+        }
     });
+    
+    // Ensure we always have at least 1 car ahead and 1 car behind
+    ensureMinimumTraffic();
+}
+
+// Ensure minimum traffic distribution around player
+function ensureMinimumTraffic() {
+    // Count cars ahead and behind player
+    const carsAhead = game.traffic.filter(car => car.position < game.player.position).length;
+    const carsBehind = game.traffic.filter(car => car.position > game.player.position).length;
+    
+    // When player is at minimum speed, prioritize spawning behind
+    const isAtMinSpeed = game.player.speed <= 105; // Within 5 km/h of minimum
+    
+    // Adjust minimum requirements based on player speed
+    const minCarsAhead = isAtMinSpeed ? 0 : 1;
+    const minCarsBehind = isAtMinSpeed ? 2 : 1;
+    
+    // Need at least minimum cars ahead (unless at min speed)
+    if (carsAhead < minCarsAhead) {
+        let attempts = 0;
+        let spawned = false;
+        
+        while (!spawned && attempts < 10) {
+            const position = game.player.position - 80 - Math.random() * 60;
+            let driverType, lane, speed;
+            
+            // Car ahead should be slower than player (so player can catch up)
+            const maxSpeed = game.player.speed - 5; // At least 5 km/h slower
+            const minSpeed = Math.max(95, maxSpeed - 20); // Don't go below 95 km/h
+            
+            speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+            
+            // Assign driver type and lane based on speed
+            if (speed < 110) {
+                driverType = 'slow';
+                lane = 1; // Right lane
+            } else if (speed < 120) {
+                driverType = 'medium';
+                lane = Math.floor(Math.random() * NUM_LANES);
+            } else {
+                driverType = 'fast';
+                lane = 0; // Left lane
+            }
+            
+            if (isSpawnPositionSafe(lane, position)) {
+                game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                spawned = true;
+            }
+            attempts++;
+        }
+    }
+    
+    // Need at least minimum cars behind (more when at min speed)
+    if (carsBehind < minCarsBehind) {
+        let attempts = 0;
+        let spawned = false;
+        
+        while (!spawned && attempts < 10) {
+            const position = game.player.position + 60 + Math.random() * 40;
+            let driverType, lane, speed;
+            
+            // Car behind should be faster than player (so it can catch up)
+            const minSpeed = game.player.speed + 5; // At least 5 km/h faster
+            const maxSpeed = Math.min(150, minSpeed + 20); // Don't exceed 150 km/h
+            
+            speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+            
+            // Assign driver type and lane based on speed
+            if (speed < 110) {
+                driverType = 'slow';
+                lane = 1; // Right lane
+            } else if (speed < 120) {
+                driverType = 'medium';
+                lane = Math.floor(Math.random() * NUM_LANES);
+            } else {
+                driverType = 'fast';
+                lane = 0; // Left lane
+            }
+            
+            if (isSpawnPositionSafe(lane, position)) {
+                game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                spawned = true;
+            }
+            attempts++;
+        }
+    }
+}
+
+// Check for collisions between AI cars
+function checkAICarCollisions() {
+    for (let i = 0; i < game.traffic.length; i++) {
+        const car1 = game.traffic[i];
+        if (car1.crashed) continue;
+        
+        for (let j = i + 1; j < game.traffic.length; j++) {
+            const car2 = game.traffic[j];
+            if (car2.crashed) continue;
+            
+            // Check if cars are in same lane
+            if (car1.lane === car2.lane) {
+                const distance = Math.abs(car1.position - car2.position);
+                
+                // Crash if very close (within 4 units)
+                if (distance < 4) {
+                    // Both cars crash
+                    initiateCrash(car1);
+                    initiateCrash(car2);
+                }
+            }
+        }
+    }
+}
+
+// Initiate crash for a car
+function initiateCrash(car) {
+    car.crashed = true;
+    car.crashTime = 0;
+    car.originalY = car.mesh.position.y;
+    // Random direction to fly off (left or right)
+    car.crashDirection = Math.random() < 0.5 ? -1 : 1;
+}
+
+// Update crashed car animation
+function updateCrashedCar(car, delta) {
+    car.crashTime += delta;
+    
+    const crashDuration = 3; // Total crash animation duration in seconds
+    
+    if (car.crashTime < crashDuration) {
+        // Phase 1: Shake and bounce (first 0.5 seconds)
+        if (car.crashTime < 0.5) {
+            // Shake violently
+            car.mesh.rotation.y = Math.sin(car.crashTime * 50) * 0.3;
+            car.mesh.rotation.x = Math.sin(car.crashTime * 40) * 0.2;
+            car.mesh.rotation.z = Math.sin(car.crashTime * 60) * 0.2;
+            
+            // Bounce up
+            car.mesh.position.y = car.originalY + Math.abs(Math.sin(car.crashTime * 15)) * 2;
+        }
+        // Phase 2: Fly off to the side (0.5 to 3 seconds)
+        else {
+            const flyTime = car.crashTime - 0.5;
+            
+            // Continue bouncing but decreasing
+            car.mesh.position.y = car.originalY + Math.abs(Math.sin(flyTime * 8)) * (2 - flyTime * 0.8);
+            
+            // Spin around
+            car.mesh.rotation.y += delta * 5 * car.crashDirection;
+            car.mesh.rotation.x += delta * 3;
+            
+            // Move sideways into the grass
+            car.mesh.position.x += car.crashDirection * delta * 8;
+            
+            // Slow down but keep moving
+            car.speed *= 0.95;
+            car.position -= (car.speed / 3.6) * delta;
+            car.mesh.position.z = car.position;
+        }
+    } else {
+        // Remove car after animation completes
+        game.scene.remove(car.mesh);
+        const index = game.traffic.indexOf(car);
+        if (index > -1) {
+            game.traffic.splice(index, 1);
+        }
+    }
 }
 
 // Check for collisions
 function checkCollisions() {
     for (let car of game.traffic) {
+        if (car.crashed) continue; // Skip crashed cars
+        
         const distance = Math.abs(car.position - game.player.position);
         const sameLane = car.lane === game.player.lane;
         
@@ -611,24 +954,34 @@ function checkCollisions() {
 // Update scoring system
 function updateScoring(delta) {
     game.scoreTimer += delta;
+    game.feedbackDebounce = Math.max(0, game.feedbackDebounce - delta);
     
     if (game.scoreTimer >= 1) {
         game.scoreTimer = 0;
         
+        let shouldIncreasePoints = false;
+        let shouldDecreasePoints = false;
+        let feedbackReason = null;
+        
         // Base points for driving
         if (game.player.speed > 30) {
-            game.score += 1;
+            shouldIncreasePoints = true;
+            feedbackReason = 'driving';
         }
         
         // Check for penalties
         
-        // 1. Tailgating
+        // 1. Tailgating - player following another car too closely
         for (let car of game.traffic) {
-            const distance = car.position - game.player.position;
+            if (car.crashed) continue; // Skip crashed cars
+            
+            const distance = game.player.position - car.position; // Car ahead means car.position < player.position
             const sameLane = car.lane === game.player.lane;
             
             if (sameLane && distance > 0 && distance < TAILGATE_DISTANCE) {
-                game.score -= 5;
+                shouldDecreasePoints = true;
+                shouldIncreasePoints = false;
+                feedbackReason = 'tailgating';
             }
         }
         
@@ -636,27 +989,57 @@ function updateScoring(delta) {
         if (game.player.lane === 0) { // Leftmost lane
             const passingRange = TAILGATE_DISTANCE * 2;
             const passingVehicle = game.traffic.some(car => {
+                if (car.crashed) return false; // Skip crashed cars
                 const distance = Math.abs(car.position - game.player.position);
                 return car.lane === 1 && distance <= passingRange;
             });
             
             if (!passingVehicle) {
-                game.score -= 3;
+                shouldDecreasePoints = true;
+                shouldIncreasePoints = false;
+                feedbackReason = 'left_lane';
             }
             
             // 3. Being in left lane while someone is behind you
             for (let car of game.traffic) {
+                if (car.crashed) continue; // Skip crashed cars
+                
                 const behind = car.position > game.player.position;
                 const close = Math.abs(car.position - game.player.position) < 50;
                 
                 if (car.lane === 0 && behind && close && car.speed > game.player.speed) {
-                    game.score -= 5;
+                    shouldDecreasePoints = true;
+                    shouldIncreasePoints = false;
+                    feedbackReason = 'blocking';
                     break;
                 }
             }
         }
         
-        updateScore();
+        // Show feedback if reason changed and not on cooldown
+        if (feedbackReason !== game.lastFeedbackReason && game.feedbackDebounce <= 0) {
+            if (feedbackReason === 'driving') {
+                showScoreFeedback('Good Driving', true);
+            } else if (feedbackReason === 'tailgating') {
+                showScoreFeedback('Following too close', false);
+            } else if (feedbackReason === 'left_lane') {
+                showScoreFeedback('Wrong Lane', false);
+            } else if (feedbackReason === 'blocking') {
+                showScoreFeedback('Blocking Traffic', false);
+            }
+            game.lastFeedbackReason = feedbackReason;
+            game.feedbackDebounce = 3; // 3 second cooldown
+        }
+        
+        // Apply point animations based on conditions
+        if (shouldDecreasePoints) {
+            startDecreasingPoints();
+        } else if (shouldIncreasePoints) {
+            startIncreasingPoints();
+        } else {
+            stopAllPointAnimations();
+            game.lastFeedbackReason = null;
+        }
     }
 }
 
@@ -666,9 +1049,103 @@ function updateScore() {
     document.getElementById('score').textContent = game.score;
 }
 
+// Show score feedback message
+let feedbackTimeout = null;
+function showScoreFeedback(message, isPositive = true) {
+    const feedbackElement = document.getElementById('score-feedback');
+    
+    // Clear any existing timeout
+    if (feedbackTimeout) {
+        clearTimeout(feedbackTimeout);
+    }
+    
+    // Remove existing classes and animation
+    feedbackElement.classList.remove('show', 'positive', 'negative');
+    feedbackElement.style.animation = 'none';
+    
+    // Set message and style
+    feedbackElement.textContent = message;
+    feedbackElement.classList.add(isPositive ? 'positive' : 'negative');
+    
+    // Trigger show with a small delay to restart animation
+    setTimeout(() => {
+        feedbackElement.classList.add('show');
+    }, 10);
+    
+    // Fade out after 2.5 seconds
+    feedbackTimeout = setTimeout(() => {
+        feedbackElement.style.animation = 'fadeOut 0.5s forwards';
+        
+        // Remove show class after animation
+        setTimeout(() => {
+            feedbackElement.classList.remove('show');
+            feedbackElement.style.animation = 'none';
+        }, 500);
+    }, 2500);
+}
+
+// Start increasing points gradually
+function startIncreasingPoints() {
+    if (game.pointsAnimation.increasing) return; // Already increasing
+    
+    stopDecreasingPoints(); // Stop any decreasing animation
+    game.pointsAnimation.increasing = true;
+    
+    // Increase by 1 point every `increaseInterval` ms
+    let increaseInterval = 250;
+    game.pointsAnimation.increaseInterval = setInterval(() => {
+        if (!game.gameOver && game.pointsAnimation.increasing) {
+            game.score += 1;
+            updateScore();
+        }
+    }, increaseInterval);
+}
+
+// Stop increasing points
+function stopIncreasingPoints() {
+    if (game.pointsAnimation.increaseInterval) {
+        clearInterval(game.pointsAnimation.increaseInterval);
+        game.pointsAnimation.increaseInterval = null;
+    }
+    game.pointsAnimation.increasing = false;
+}
+
+// Start decreasing points gradually
+function startDecreasingPoints() {
+    if (game.pointsAnimation.decreasing) return; // Already decreasing
+    
+    stopIncreasingPoints(); // Stop any increasing animation
+    game.pointsAnimation.decreasing = true;
+    
+    // Decrease by 1 point every `decreaseInterval` ms
+    let decreaseInterval = 50;
+    game.pointsAnimation.decreaseInterval = setInterval(() => {
+        if (!game.gameOver && game.pointsAnimation.decreasing) {
+            game.score -= 1;
+            updateScore();
+        }
+    }, decreaseInterval);
+}
+
+// Stop decreasing points
+function stopDecreasingPoints() {
+    if (game.pointsAnimation.decreaseInterval) {
+        clearInterval(game.pointsAnimation.decreaseInterval);
+        game.pointsAnimation.decreaseInterval = null;
+    }
+    game.pointsAnimation.decreasing = false;
+}
+
+// Stop all point animations
+function stopAllPointAnimations() {
+    stopIncreasingPoints();
+    stopDecreasingPoints();
+}
+
 // Game over
 function gameOver(reason) {
     game.gameOver = true;
+    stopAllPointAnimations(); // Clean up point animation intervals
     document.getElementById('final-score').textContent = `Final Score: ${game.score}`;
     document.getElementById('game-over-reason').textContent = reason;
     document.getElementById('game-over').classList.remove('hidden');
@@ -676,6 +1153,9 @@ function gameOver(reason) {
 
 // Restart game
 function restart() {
+    // Stop all point animations
+    stopAllPointAnimations();
+    
     // Remove all traffic
     game.traffic.forEach(car => game.scene.remove(car.mesh));
     game.traffic = [];
@@ -688,14 +1168,63 @@ function restart() {
     game.player.leftSignal = false;
     game.player.rightSignal = false;
     
+    // Reset camera
+    game.camera.position.set(LANE_POSITIONS[1], 2.5, -2);
+    game.camera.rotation.x = -0.1;
+    
+    // Reset road segments to initial positions
+    const roadLength = 500;
+    game.roadSegments.forEach((segment, i) => {
+        segment.position.z = (i - 2) * roadLength;
+    });
+    
+    // Reset lane markings to initial positions
+    let markingIndex = 0;
+    for (let lane = 0; lane < NUM_LANES - 1; lane++) {
+        for (let z = -1500; z < 1500; z += 15) {
+            if (markingIndex < game.laneMarkings.length) {
+                game.laneMarkings[markingIndex].position.z = z;
+                markingIndex++;
+            }
+        }
+    }
+    
+    // Reset road edges to initial positions
+    let edgeIndex = 0;
+    for (let side of [-1, 1]) {
+        for (let z = -1500; z < 1500; z += 10) {
+            if (edgeIndex < game.roadEdges.length) {
+                game.roadEdges[edgeIndex].position.z = z;
+                edgeIndex++;
+            }
+        }
+    }
+    
+    // Reset ground segments to initial positions
+    let groundIndex = 0;
+    for (let side of [-1, 1]) {
+        for (let i = -2; i <= 2; i++) {
+            if (groundIndex < game.groundSegments.length) {
+                game.groundSegments[groundIndex].position.z = i * 1000;
+                groundIndex++;
+            }
+        }
+    }
+    
     // Reset score
     game.score = 1000;
     game.scoreTimer = 0;
+    game.lastFeedbackReason = null;
+    game.feedbackDebounce = 0;
     updateScore();
     
     // Reset game over
     game.gameOver = false;
     document.getElementById('game-over').classList.add('hidden');
+    
+    // Turn off signal indicators
+    document.getElementById('left-indicator').classList.remove('active');
+    document.getElementById('right-indicator').classList.remove('active');
     
     // Spawn new traffic
     spawnTraffic();
