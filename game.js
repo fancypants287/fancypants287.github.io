@@ -271,34 +271,34 @@ function createDashboard() {
 function createTrafficCar(lane, position, speed, driverType = 'medium') {
     const carGroup = new THREE.Group();
     
-    // Car body
-    const bodyGeometry = new THREE.BoxGeometry(2, 1.5, 4);
+    // Car body (smaller, more car-like)
+    const bodyGeometry = new THREE.BoxGeometry(1.7, 1.2, 3.4);
     const bodyMaterial = new THREE.MeshLambertMaterial({ 
         color: Math.random() * 0xffffff 
     });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 1;
+    body.position.y = 0.8;
     carGroup.add(body);
 
-    // Car roof
-    const roofGeometry = new THREE.BoxGeometry(1.8, 0.8, 2.5);
+    // Car roof (smaller and more streamlined)
+    const roofGeometry = new THREE.BoxGeometry(1.5, 0.7, 2);
     const roofMaterial = new THREE.MeshLambertMaterial({ 
         color: bodyMaterial.color 
     });
     const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-    roof.position.y = 2;
-    roof.position.z = -0.3;
+    roof.position.y = 1.65;
+    roof.position.z = -0.2;
     carGroup.add(roof);
 
-    // Wheels
-    const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 16);
+    // Wheels (smaller)
+    const wheelGeometry = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
     const wheelMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
     
     const wheelPositions = [
-        [-1.2, 0.4, 1.5],
-        [1.2, 0.4, 1.5],
-        [-1.2, 0.4, -1.5],
-        [1.2, 0.4, -1.5]
+        [-1, 0.35, 1.3],
+        [1, 0.35, 1.3],
+        [-1, 0.35, -1.3],
+        [1, 0.35, -1.3]
     ];
     
     wheelPositions.forEach(pos => {
@@ -307,6 +307,31 @@ function createTrafficCar(lane, position, speed, driverType = 'medium') {
         wheel.position.set(...pos);
         carGroup.add(wheel);
     });
+
+    // Signal lights (front and rear, smaller)
+    const signalGeometry = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+    const leftSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const rightSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const leftRearSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const rightRearSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    
+    // Front signals
+    const leftSignal = new THREE.Mesh(signalGeometry, leftSignalMaterial);
+    leftSignal.position.set(-0.85, 0.8, 1.85);
+    carGroup.add(leftSignal);
+    
+    const rightSignal = new THREE.Mesh(signalGeometry, rightSignalMaterial);
+    rightSignal.position.set(0.85, 0.8, 1.85);
+    carGroup.add(rightSignal);
+    
+    // Rear signals
+    const leftRearSignal = new THREE.Mesh(signalGeometry, leftRearSignalMaterial);
+    leftRearSignal.position.set(-0.85, 0.8, -1.85);
+    carGroup.add(leftRearSignal);
+    
+    const rightRearSignal = new THREE.Mesh(signalGeometry, rightRearSignalMaterial);
+    rightRearSignal.position.set(0.85, 0.8, -1.85);
+    carGroup.add(rightRearSignal);
 
     carGroup.position.set(LANE_POSITIONS[lane], 0, position);
     game.scene.add(carGroup);
@@ -322,7 +347,116 @@ function createTrafficCar(lane, position, speed, driverType = 'medium') {
         crashed: false,
         crashTime: 0,
         crashDirection: 0,
-        originalY: 0
+        originalY: 0,
+        leftSignal: leftSignal,
+        rightSignal: rightSignal,
+        leftRearSignal: leftRearSignal,
+        rightRearSignal: rightRearSignal,
+        signalActive: false,
+        signalTimer: 0,
+        signalPreChangeTime: 0, // Time to signal before changing lanes
+        laneChangeStarted: false,
+        signalOffTimer: 0
+    };
+}
+
+// Create a truck (larger, slower vehicle)
+function createTruck(lane, position, speed) {
+    const truckGroup = new THREE.Group();
+    
+    // Truck cabin
+    const cabinGeometry = new THREE.BoxGeometry(2.5, 2.5, 3);
+    const cabinMaterial = new THREE.MeshLambertMaterial({ 
+        color: Math.random() * 0xffffff 
+    });
+    const cabin = new THREE.Mesh(cabinGeometry, cabinMaterial);
+    cabin.position.y = 1.5;
+    cabin.position.z = 3.5;
+    truckGroup.add(cabin);
+
+    // Truck container/trailer (longer body)
+    const containerGeometry = new THREE.BoxGeometry(2.5, 2.8, 10);
+    const containerMaterial = new THREE.MeshLambertMaterial({ 
+        color: Math.random() * 0xffffff 
+    });
+    const container = new THREE.Mesh(containerGeometry, containerMaterial);
+    container.position.y = 1.8;
+    container.position.z = -2;
+    truckGroup.add(container);
+
+    // Wheels (6 wheels for truck)
+    const wheelGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16);
+    const wheelMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
+    
+    const wheelPositions = [
+        [-1.4, 0.5, 4],    // Front left
+        [1.4, 0.5, 4],     // Front right
+        [-1.4, 0.5, -1],   // Middle left
+        [1.4, 0.5, -1],    // Middle right
+        [-1.4, 0.5, -5],   // Rear left
+        [1.4, 0.5, -5]     // Rear right
+    ];
+    
+    wheelPositions.forEach(pos => {
+        const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(...pos);
+        truckGroup.add(wheel);
+    });
+
+    // Signal lights (front and rear)
+    const signalGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const leftSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const rightSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const leftRearSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    const rightRearSignalMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+    
+    // Front signals (on cabin)
+    const leftSignal = new THREE.Mesh(signalGeometry, leftSignalMaterial);
+    leftSignal.position.set(-1.3, 1.5, 5.2);
+    truckGroup.add(leftSignal);
+    
+    const rightSignal = new THREE.Mesh(signalGeometry, rightSignalMaterial);
+    rightSignal.position.set(1.3, 1.5, 5.2);
+    truckGroup.add(rightSignal);
+    
+    // Rear signals (on container back)
+    const leftRearSignal = new THREE.Mesh(signalGeometry, leftRearSignalMaterial);
+    leftRearSignal.position.set(-1.3, 1.5, -7.2);
+    truckGroup.add(leftRearSignal);
+    
+    const rightRearSignal = new THREE.Mesh(signalGeometry, rightRearSignalMaterial);
+    rightRearSignal.position.set(1.3, 1.5, -7.2);
+    truckGroup.add(rightRearSignal);
+
+    // Rotate truck to face the correct direction
+    truckGroup.rotation.y = Math.PI;
+
+    truckGroup.position.set(LANE_POSITIONS[lane], 0, position);
+    game.scene.add(truckGroup);
+
+    return {
+        mesh: truckGroup,
+        lane: lane,
+        position: position,
+        speed: speed,
+        targetLane: lane,
+        driverType: 'truck',
+        isTruck: true,
+        blockedByPlayerTime: 0,
+        crashed: false,
+        crashTime: 0,
+        crashDirection: 0,
+        originalY: 0,
+        leftSignal: leftSignal,
+        rightSignal: rightSignal,
+        leftRearSignal: leftRearSignal,
+        rightRearSignal: rightRearSignal,
+        signalActive: false,
+        signalTimer: 0,
+        signalPreChangeTime: 0,
+        laneChangeStarted: false,
+        signalOffTimer: 0
     };
 }
 
@@ -342,40 +476,50 @@ function isSpawnPositionSafe(lane, position, minDistance = 30) {
 
 // Spawn traffic
 function spawnTraffic() {
-    const numCars = 8;
+    const numVehicles = 8;
     
-    for (let i = 0; i < numCars; i++) {
-        let position, lane, driverType, speed;
+    for (let i = 0; i < numVehicles; i++) {
+        let position, lane, driverType, speed, isTruck;
         let attempts = 0;
         let validPosition = false;
         
         // Try up to 10 times to find a safe position
         while (!validPosition && attempts < 10) {
-            // Spawn cars both ahead and behind player
+            // Spawn vehicles both ahead and behind player
             position = -200 + Math.random() * 400; // Range: -200 to +200
             
-            // Randomly select driver type
+            // Randomly select vehicle and driver type
             const rand = Math.random();
             
-            if (rand < 0.33) {
+            // 20% chance to spawn a truck
+            if (rand < 0.2) {
+                isTruck = true;
+                driverType = 'truck';
+                lane = 1; // Trucks stay in right lane
+                speed = 95 + Math.random() * 20; // 95-115 km/h
+            } else if (rand < 0.46) {
                 // Slow driver - right lane, 100-115 km/h
+                isTruck = false;
                 driverType = 'slow';
                 lane = 1; // Right lane
                 speed = 100 + Math.random() * 15;
-            } else if (rand < 0.66) {
+            } else if (rand < 0.73) {
                 // Fast driver - left lane, 120-150 km/h
+                isTruck = false;
                 driverType = 'fast';
                 lane = 0; // Left lane
                 speed = 120 + Math.random() * 30;
             } else {
                 // Medium driver - any lane, 110-125 km/h
+                isTruck = false;
                 driverType = 'medium';
                 lane = Math.floor(Math.random() * NUM_LANES);
                 speed = 110 + Math.random() * 15;
             }
             
-            // Check if position is safe
-            if (isSpawnPositionSafe(lane, position)) {
+            // Check if position is safe (trucks need more space)
+            const minDistance = isTruck ? 40 : 30;
+            if (isSpawnPositionSafe(lane, position, minDistance)) {
                 validPosition = true;
             }
             attempts++;
@@ -383,7 +527,13 @@ function spawnTraffic() {
         
         // Only spawn if we found a valid position
         if (validPosition) {
-            game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+            if (isTruck) {
+                const truck = createTruck(lane, position, speed);
+                game.traffic.push(truck);
+                console.log('Spawned truck at position:', position, 'lane:', lane, 'speed:', speed);
+            } else {
+                game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+            }
         }
     }
 }
@@ -461,17 +611,33 @@ function onKeyDown(event) {
     
     // Signal indicators
     if (event.key.toLowerCase() === 'q') {
-        game.player.leftSignal = true;
-        game.player.rightSignal = false;
-        document.getElementById('left-indicator').classList.add('active');
-        document.getElementById('right-indicator').classList.remove('active');
+        // Toggle left signal
+        if (game.player.leftSignal) {
+            // Turn off left signal
+            game.player.leftSignal = false;
+            document.getElementById('left-indicator').classList.remove('active');
+        } else {
+            // Turn on left signal, turn off right
+            game.player.leftSignal = true;
+            game.player.rightSignal = false;
+            document.getElementById('left-indicator').classList.add('active');
+            document.getElementById('right-indicator').classList.remove('active');
+        }
     }
     
     if (event.key.toLowerCase() === 'e') {
-        game.player.rightSignal = true;
-        game.player.leftSignal = false;
-        document.getElementById('right-indicator').classList.add('active');
-        document.getElementById('left-indicator').classList.remove('active');
+        // Toggle right signal
+        if (game.player.rightSignal) {
+            // Turn off right signal
+            game.player.rightSignal = false;
+            document.getElementById('right-indicator').classList.remove('active');
+        } else {
+            // Turn on right signal, turn off left
+            game.player.rightSignal = true;
+            game.player.leftSignal = false;
+            document.getElementById('right-indicator').classList.add('active');
+            document.getElementById('left-indicator').classList.remove('active');
+        }
     }
     
     // Lane changes
@@ -669,8 +835,21 @@ function updateTraffic(delta) {
                     return otherCar !== car && otherCar.lane === otherLane && 
                            Math.abs(otherCar.position - car.position) < 20;
                 });
-                if (otherLaneClear) {
+                if (otherLaneClear && car.targetLane === car.lane) {
                     car.targetLane = otherLane;
+                    // Activate signal with random delay before lane change
+                    car.signalPreChangeTime = 0.5 + Math.random() * 4.5; // 500ms to 5s
+                    car.signalTimer = 0;
+                    car.laneChangeStarted = false;
+                    car.signalActive = true;
+                    const signalDirection = otherLane < car.lane ? 'left' : 'right';
+                    if (signalDirection === 'left') {
+                        car.leftSignal.material.color.setHex(0xff8800);
+                        car.leftRearSignal.material.color.setHex(0xff8800);
+                    } else {
+                        car.rightSignal.material.color.setHex(0xff8800);
+                        car.rightRearSignal.material.color.setHex(0xff8800);
+                    }
                 }
             }
         } else {
@@ -688,15 +867,29 @@ function updateTraffic(delta) {
         
         // AI lane change logic based on driver type
         if (car.lane === car.targetLane) {
-            if (car.driverType === 'slow') {
-                // Slow drivers stay in right lane
+            if (car.driverType === 'slow' || car.driverType === 'truck') {
+                // Slow drivers and trucks stay in right lane
                 if (car.lane !== 1) {
                     car.targetLane = 1;
+                    // Activate signal
+                    car.signalPreChangeTime = 0.5 + Math.random() * 4.5;
+                    car.signalTimer = 0;
+                    car.laneChangeStarted = false;
+                    car.signalActive = true;
+                    car.rightSignal.material.color.setHex(0xff8800);
+                    car.rightRearSignal.material.color.setHex(0xff8800);
                 }
             } else if (car.driverType === 'fast') {
                 // Fast drivers stay in left lane
                 if (car.lane !== 0) {
                     car.targetLane = 0;
+                    // Activate signal
+                    car.signalPreChangeTime = 0.5 + Math.random() * 4.5;
+                    car.signalTimer = 0;
+                    car.laneChangeStarted = false;
+                    car.signalActive = true;
+                    car.leftSignal.material.color.setHex(0xff8800);
+                    car.leftRearSignal.material.color.setHex(0xff8800);
                 }
             } else if (car.driverType === 'medium') {
                 // Medium drivers change lanes as necessary
@@ -704,13 +897,59 @@ function updateTraffic(delta) {
                     const newLane = Math.floor(Math.random() * NUM_LANES);
                     if (newLane !== car.lane) {
                         car.targetLane = newLane;
+                        // Activate signal
+                        car.signalPreChangeTime = 0.5 + Math.random() * 4.5;
+                        car.signalTimer = 0;
+                        car.laneChangeStarted = false;
+                        car.signalActive = true;
+                        const signalDirection = newLane < car.lane ? 'left' : 'right';
+                        if (signalDirection === 'left') {
+                            car.leftSignal.material.color.setHex(0xff8800);
+                            car.leftRearSignal.material.color.setHex(0xff8800);
+                        } else {
+                            car.rightSignal.material.color.setHex(0xff8800);
+                            car.rightRearSignal.material.color.setHex(0xff8800);
+                        }
                     }
                 }
             }
         }
         
-        // Smoothly move to target lane
-        if (car.lane !== car.targetLane) {
+        // Handle signal timing and lane changes
+        if (car.signalActive && !car.laneChangeStarted) {
+            car.signalTimer += delta;
+            // Start lane change after signal pre-change time
+            if (car.signalTimer >= car.signalPreChangeTime) {
+                car.laneChangeStarted = true;
+            }
+        }
+        
+        // Flash signal lights when active
+        if (car.signalActive) {
+            if (!car.signalFlashTimer) {
+                car.signalFlashTimer = 0;
+            }
+            car.signalFlashTimer += delta;
+            
+            // Toggle every 0.4 seconds (2.5 Hz)
+            const flashOn = Math.floor(car.signalFlashTimer / 0.4) % 2 === 0;
+            const color = flashOn ? 0xff8800 : 0x333333;
+            
+            // Determine which signals should flash
+            const flashingLeft = car.targetLane < car.lane;
+            const flashingRight = car.targetLane > car.lane;
+            
+            if (flashingLeft) {
+                car.leftSignal.material.color.setHex(color);
+                car.leftRearSignal.material.color.setHex(color);
+            } else if (flashingRight) {
+                car.rightSignal.material.color.setHex(color);
+                car.rightRearSignal.material.color.setHex(color);
+            }
+        }
+        
+        // Smoothly move to target lane (only if signal time has elapsed)
+        if (car.lane !== car.targetLane && car.laneChangeStarted) {
             const targetX = LANE_POSITIONS[car.targetLane];
             const currentX = car.mesh.position.x;
             const diff = targetX - currentX;
@@ -718,8 +957,24 @@ function updateTraffic(delta) {
             if (Math.abs(diff) < 0.1) {
                 car.lane = car.targetLane;
                 car.mesh.position.x = targetX;
+                // Start timer to turn off signal 1 second after lane change
+                car.signalOffTimer = 1.0;
             } else {
                 car.mesh.position.x += Math.sign(diff) * delta * 2;
+            }
+        }
+        
+        // Turn off signal after delay
+        if (car.signalOffTimer > 0) {
+            car.signalOffTimer -= delta;
+            if (car.signalOffTimer <= 0) {
+                car.leftSignal.material.color.setHex(0x333333);
+                car.rightSignal.material.color.setHex(0x333333);
+                car.leftRearSignal.material.color.setHex(0x333333);
+                car.rightRearSignal.material.color.setHex(0x333333);
+                car.signalActive = false;
+                car.signalOffTimer = 0;
+                car.signalFlashTimer = 0;
             }
         }
     });
@@ -739,8 +994,11 @@ function updateTraffic(delta) {
             const minSpeed = Math.max(95, maxSpeed - 20);
             car.speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
             
-            // Update driver type based on new speed
-            if (car.speed < 110) {
+            // Preserve truck type, or update driver type based on new speed
+            if (car.isTruck) {
+                car.driverType = 'truck';
+                car.speed = Math.min(car.speed, 115); // Trucks max 115 km/h
+            } else if (car.speed < 110) {
                 car.driverType = 'slow';
             } else if (car.speed < 120) {
                 car.driverType = 'medium';
@@ -758,9 +1016,10 @@ function updateTraffic(delta) {
             const maxSpeed = Math.min(150, minSpeed + 20);
             car.speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
             
-            // Update driver type based on new speed
-            if (car.speed < 110) {
-                car.driverType = 'slow';
+            // Preserve truck type, or update driver type based on new speed
+            if (car.isTruck) {
+                car.driverType = 'truck';
+                car.speed = Math.min(car.speed, 115); // Trucks max 115 km/h
             } else if (car.speed < 120) {
                 car.driverType = 'medium';
             } else {
@@ -803,19 +1062,38 @@ function ensureMinimumTraffic() {
             
             // Assign driver type and lane based on speed
             if (speed < 110) {
-                driverType = 'slow';
-                lane = 1; // Right lane
+                // 50% chance to spawn truck if speed is low enough (trucks are slow!)
+                if (speed <= 115 && Math.random() < 0.5) {
+                    driverType = 'truck';
+                    lane = 1; // Right lane
+                    if (isSpawnPositionSafe(lane, position, 40)) {
+                        const truck = createTruck(lane, position, speed);
+                        game.traffic.push(truck);
+                        console.log('Dynamically spawned truck at position:', position, 'speed:', speed);
+                        spawned = true;
+                    }
+                } else {
+                    driverType = 'slow';
+                    lane = 1; // Right lane
+                    if (isSpawnPositionSafe(lane, position)) {
+                        game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                        spawned = true;
+                    }
+                }
             } else if (speed < 120) {
                 driverType = 'medium';
                 lane = Math.floor(Math.random() * NUM_LANES);
+                if (isSpawnPositionSafe(lane, position)) {
+                    game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                    spawned = true;
+                }
             } else {
                 driverType = 'fast';
                 lane = 0; // Left lane
-            }
-            
-            if (isSpawnPositionSafe(lane, position)) {
-                game.traffic.push(createTrafficCar(lane, position, speed, driverType));
-                spawned = true;
+                if (isSpawnPositionSafe(lane, position)) {
+                    game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                    spawned = true;
+                }
             }
             attempts++;
         }
@@ -838,19 +1116,39 @@ function ensureMinimumTraffic() {
             
             // Assign driver type and lane based on speed
             if (speed < 110) {
-                driverType = 'slow';
-                lane = 1; // Right lane
+                // Only spawn truck if speed is actually slow enough for a truck
+                // (This rarely happens since vehicles behind are faster than player)
+                if (speed <= 115 && Math.random() < 0.3) {
+                    driverType = 'truck';
+                    lane = 1; // Right lane
+                    if (isSpawnPositionSafe(lane, position, 40)) {
+                        const truck = createTruck(lane, position, speed);
+                        game.traffic.push(truck);
+                        console.log('Dynamically spawned truck behind at position:', position, 'speed:', speed);
+                        spawned = true;
+                    }
+                } else {
+                    driverType = 'slow';
+                    lane = 1; // Right lane
+                    if (isSpawnPositionSafe(lane, position)) {
+                        game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                        spawned = true;
+                    }
+                }
             } else if (speed < 120) {
                 driverType = 'medium';
                 lane = Math.floor(Math.random() * NUM_LANES);
+                if (isSpawnPositionSafe(lane, position)) {
+                    game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                    spawned = true;
+                }
             } else {
                 driverType = 'fast';
                 lane = 0; // Left lane
-            }
-            
-            if (isSpawnPositionSafe(lane, position)) {
-                game.traffic.push(createTrafficCar(lane, position, speed, driverType));
-                spawned = true;
+                if (isSpawnPositionSafe(lane, position)) {
+                    game.traffic.push(createTrafficCar(lane, position, speed, driverType));
+                    spawned = true;
+                }
             }
             attempts++;
         }
@@ -959,16 +1257,28 @@ function checkCollisions() {
     for (let car of game.traffic) {
         if (car.crashed) continue; // Skip crashed cars
         
+        // Calculate collision distances based on vehicle type
+        // Cars: ~3.4 units long, ~1.7 units wide
+        // Trucks: ~13 units long (cabin + container), ~2.5 units wide
+        const carLength = car.isTruck ? 6.5 : 1.7; // Half-length for collision detection
+        const carWidth = car.isTruck ? 1.25 : 0.85; // Half-width for collision detection
+        const playerLength = 2; // Player car half-length (approximate)
+        const playerWidth = 0.85; // Player car half-width
+        
         // Check both longitudinal (front/back) and lateral (left/right) distances
         const longitudinalDistance = Math.abs(car.position - game.player.position);
         const lateralDistance = Math.abs(car.mesh.position.x - game.camera.position.x);
         
+        // Collision thresholds based on combined sizes
+        const longitudinalThreshold = carLength + playerLength;
+        const lateralThreshold = carWidth + playerWidth;
+        
         // Collision occurs if both distances are within their respective thresholds
-        if (longitudinalDistance < CRASH_DISTANCE && lateralDistance < CRASH_DISTANCE_LATERAL) {
+        if (longitudinalDistance < longitudinalThreshold && lateralDistance < lateralThreshold) {
             // Determine collision type based on distances and lane states
             const carAhead = car.position < game.player.position;
             const carBehind = car.position > game.player.position;
-            const isSideCollision = longitudinalDistance < 2 && lateralDistance > 1;
+            const isSideCollision = longitudinalDistance < (carLength * 0.5) && lateralDistance > (carWidth * 0.5);
             
             // Check if either vehicle is actively changing lanes
             const carChangingLanes = car.lane !== car.targetLane;
