@@ -165,46 +165,82 @@ body {
     max-height: 90px;
 }
 
-/* Game Over */
+/* Game Over - Dark Souls style */
 #game-over {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.95);
-    border: 3px solid #ff0000;
-    border-radius: 15px;
-    padding: 40px 60px;
-    text-align: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     color: #fff;
     z-index: 100;
+    transition: background 1.5s ease-in;
+    pointer-events: none;
+}
+
+#game-over.show {
+    background: rgba(0, 0, 0, 0.9);
+    pointer-events: all;
 }
 
 #game-over h1 {
-    font-size: 48px;
-    color: #ff0000;
-    margin-bottom: 20px;
+    font-size: 72px;
+    font-weight: 300;
+    letter-spacing: 8px;
+    color: #8b0000;
+    margin-bottom: 40px;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 1s ease-in 1s, transform 1s ease-in 1s;
+    text-shadow: 0 0 20px rgba(139, 0, 0, 0.5);
+}
+
+#game-over.show h1 {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 #game-over p {
     font-size: 24px;
     margin: 10px 0;
+    opacity: 0;
+    transition: opacity 0.8s ease-in 2s;
+}
+
+#game-over.show p {
+    opacity: 0.9;
 }
 
 #restart-btn {
     margin-top: 30px;
     padding: 15px 40px;
     font-size: 20px;
-    background: #00ff00;
-    border: none;
-    border-radius: 5px;
+    background: transparent;
+    border: 2px solid #666;
+    border-radius: 0;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.3s;
+    opacity: 0;
+    transition: opacity 0.8s ease-in 2.5s, background 0.3s, border-color 0.3s;
+}
+
+#game-over.show #restart-btn {
+    opacity: 1;
+}
     cursor: pointer;
     font-weight: bold;
     transition: background 0.3s;
 }
 
 #restart-btn:hover {
-    background: #00cc00;
+    background: rgba(255, 255, 255, 0.1);
+    border-color: #fff;
 }
 
 .hidden {

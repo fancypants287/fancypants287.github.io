@@ -8,7 +8,8 @@ const HIGHWAY_WIDTH = LANE_WIDTH * NUM_LANES;
 const MIN_SPEED = 100;
 const MAX_SPEED = 140;
 const SPEED_INCREMENT = 0.1;
-const CRASH_DISTANCE = 5;
+const CRASH_DISTANCE = 4;
+const CRASH_DISTANCE_LATERAL = 2.2; // Width collision (cars are 2 units wide)
 const TAILGATE_DISTANCE = 15;
 const LEFT_LANE_SLOW_THRESHOLD = 100;
 
@@ -886,8 +887,24 @@ function initiateCrash(car) {
     car.crashed = true;
     car.crashTime = 0;
     car.originalY = car.mesh.position.y;
+    
     // Random direction to fly off (left or right)
     car.crashDirection = Math.random() < 0.5 ? -1 : 1;
+    
+    // Random crash parameters for variety
+    car.crashParams = {
+        shakeIntensityX: 0.15 + Math.random() * 0.4,  // 0.15-0.55
+        shakeIntensityY: 0.1 + Math.random() * 0.3,   // 0.1-0.4
+        shakeIntensityZ: 0.15 + Math.random() * 0.4,  // 0.15-0.55
+        shakeSpeedX: 35 + Math.random() * 60,         // 35-95
+        shakeSpeedY: 30 + Math.random() * 50,         // 30-80
+        shakeSpeedZ: 45 + Math.random() * 80,         // 45-125
+        bounceHeight: 1.5 + Math.random() * 3,        // 1.5-4.5
+        bounceSpeed: 12 + Math.random() * 16,         // 12-28
+        spinSpeedY: 3 + Math.random() * 8,            // 3-11
+        spinSpeedX: 2 + Math.random() * 6,            // 2-8
+        flySpeed: 6 + Math.random() * 10              // 6-16
+    };
 }
 
 // Update crashed car animation
@@ -895,31 +912,32 @@ function updateCrashedCar(car, delta) {
     car.crashTime += delta;
     
     const crashDuration = 3; // Total crash animation duration in seconds
+    const params = car.crashParams;
     
     if (car.crashTime < crashDuration) {
         // Phase 1: Shake and bounce (first 0.5 seconds)
         if (car.crashTime < 0.5) {
-            // Shake violently
-            car.mesh.rotation.y = Math.sin(car.crashTime * 50) * 0.3;
-            car.mesh.rotation.x = Math.sin(car.crashTime * 40) * 0.2;
-            car.mesh.rotation.z = Math.sin(car.crashTime * 60) * 0.2;
+            // Shake violently with randomized parameters
+            car.mesh.rotation.y = Math.sin(car.crashTime * params.shakeSpeedX) * params.shakeIntensityX;
+            car.mesh.rotation.x = Math.sin(car.crashTime * params.shakeSpeedY) * params.shakeIntensityY;
+            car.mesh.rotation.z = Math.sin(car.crashTime * params.shakeSpeedZ) * params.shakeIntensityZ;
             
-            // Bounce up
-            car.mesh.position.y = car.originalY + Math.abs(Math.sin(car.crashTime * 15)) * 2;
+            // Bounce up with random height
+            car.mesh.position.y = car.originalY + Math.abs(Math.sin(car.crashTime * params.bounceSpeed)) * params.bounceHeight;
         }
         // Phase 2: Fly off to the side (0.5 to 3 seconds)
         else {
             const flyTime = car.crashTime - 0.5;
             
             // Continue bouncing but decreasing
-            car.mesh.position.y = car.originalY + Math.abs(Math.sin(flyTime * 8)) * (2 - flyTime * 0.8);
+            car.mesh.position.y = car.originalY + Math.abs(Math.sin(flyTime * 8)) * (params.bounceHeight - flyTime * 0.8);
             
-            // Spin around
-            car.mesh.rotation.y += delta * 5 * car.crashDirection;
-            car.mesh.rotation.x += delta * 3;
+            // Spin around with random speeds
+            car.mesh.rotation.y += delta * params.spinSpeedY * car.crashDirection;
+            car.mesh.rotation.x += delta * params.spinSpeedX;
             
-            // Move sideways into the grass
-            car.mesh.position.x += car.crashDirection * delta * 8;
+            // Move sideways into the grass with random speed
+            car.mesh.position.x += car.crashDirection * delta * params.flySpeed;
             
             // Slow down but keep moving
             car.speed *= 0.95;
@@ -941,11 +959,42 @@ function checkCollisions() {
     for (let car of game.traffic) {
         if (car.crashed) continue; // Skip crashed cars
         
-        const distance = Math.abs(car.position - game.player.position);
-        const sameLane = car.lane === game.player.lane;
+        // Check both longitudinal (front/back) and lateral (left/right) distances
+        const longitudinalDistance = Math.abs(car.position - game.player.position);
+        const lateralDistance = Math.abs(car.mesh.position.x - game.camera.position.x);
         
-        if (sameLane && distance < CRASH_DISTANCE) {
-            gameOver('Crash! You hit another vehicle.');
+        // Collision occurs if both distances are within their respective thresholds
+        if (longitudinalDistance < CRASH_DISTANCE && lateralDistance < CRASH_DISTANCE_LATERAL) {
+            // Determine collision type based on distances and lane states
+            const carAhead = car.position < game.player.position;
+            const carBehind = car.position > game.player.position;
+            const isSideCollision = longitudinalDistance < 2 && lateralDistance > 1;
+            
+            // Check if either vehicle is actively changing lanes
+            const carChangingLanes = car.lane !== car.targetLane;
+            const playerChangingLanes = game.player.lane !== game.player.targetLane;
+            
+            if (isSideCollision || carChangingLanes || playerChangingLanes) {
+                // Side collision scenarios
+                if (playerChangingLanes && !carChangingLanes) {
+                    gameOver('You sideswiped another vehicle while changing lanes!');
+                } else if (carChangingLanes && !playerChangingLanes) {
+                    gameOver('A vehicle sideswiped you while changing lanes!');
+                } else if (playerChangingLanes && carChangingLanes) {
+                    gameOver('Side collision! Both vehicles changed lanes simultaneously!');
+                } else {
+                    gameOver('Side collision! You were driving too close!');
+                }
+            } else if (carAhead && game.player.speed >= car.speed) {
+                // Player was going faster or same speed and hit car from behind
+                gameOver('You rear-ended another vehicle!');
+            } else if (carBehind && car.speed > game.player.speed) {
+                // Car was going faster and hit player from behind
+                gameOver('You were rear-ended by another vehicle!');
+            } else {
+                // Default fallback
+                gameOver('Collision with another vehicle!');
+            }
             return;
         }
     }
@@ -1047,6 +1096,11 @@ function updateScoring(delta) {
 function updateScore() {
     game.score = Math.max(0, game.score);
     document.getElementById('score').textContent = game.score;
+    
+    // Check for win condition
+    if (!game.gameOver && game.score >= 10000) {
+        gameOverWin('Congratulations! You\'ve mastered highway driving!');
+    }
 }
 
 // Show score feedback message
@@ -1148,7 +1202,36 @@ function gameOver(reason) {
     stopAllPointAnimations(); // Clean up point animation intervals
     document.getElementById('final-score').textContent = `Final Score: ${game.score}`;
     document.getElementById('game-over-reason').textContent = reason;
-    document.getElementById('game-over').classList.remove('hidden');
+    
+    const gameOverElement = document.getElementById('game-over');
+    const gameOverTitle = gameOverElement.querySelector('h1');
+    gameOverTitle.textContent = 'Game Over';
+    gameOverTitle.style.color = '#8b0000';
+    gameOverElement.classList.remove('hidden');
+    
+    // Trigger fade-in animation after a brief moment
+    setTimeout(() => {
+        gameOverElement.classList.add('show');
+    }, 50);
+}
+
+// Game over with win
+function gameOverWin(reason) {
+    game.gameOver = true;
+    stopAllPointAnimations(); // Clean up point animation intervals
+    document.getElementById('final-score').textContent = `Final Score: ${game.score}`;
+    document.getElementById('game-over-reason').textContent = reason;
+    
+    const gameOverElement = document.getElementById('game-over');
+    const gameOverTitle = gameOverElement.querySelector('h1');
+    gameOverTitle.textContent = 'Success!';
+    gameOverTitle.style.color = '#006400';
+    gameOverElement.classList.remove('hidden');
+    
+    // Trigger fade-in animation after a brief moment
+    setTimeout(() => {
+        gameOverElement.classList.add('show');
+    }, 50);
 }
 
 // Restart game
@@ -1220,7 +1303,9 @@ function restart() {
     
     // Reset game over
     game.gameOver = false;
-    document.getElementById('game-over').classList.add('hidden');
+    const gameOverElement = document.getElementById('game-over');
+    gameOverElement.classList.remove('show');
+    gameOverElement.classList.add('hidden');
     
     // Turn off signal indicators
     document.getElementById('left-indicator').classList.remove('active');
